@@ -1,20 +1,18 @@
 #include "threadpool.h"
-#include <iostream>
-#include <thread>
 
 void ThreadPool::callback() {
     while(true) {
         // unique_lock 会自动加锁
         std::unique_lock<std::mutex> lock(mutex_);
-        while(jobs_.empty()) {
-            if(this->terminate_) return;
-            cond_.wait(lock);
-        }
+        cond_.wait(lock, [this]() {
+            return !jobs_.empty() || this->terminate_;    // 当 jobs_ 不为空或者 terminate_  == true 时跳出等待
+        });
+
         if(this->terminate_) break;
 
         auto job = jobs_.front();
         jobs_.pop();
-        lock.unlock(); // TODO: 这个必须要去掉吗？
+        lock.unlock();
         job();
     }
 }
@@ -30,9 +28,7 @@ ThreadPool::ThreadPool() {
 
 ThreadPool::~ThreadPool() {
     this->terminate_ = true;
-    std::cout << std::endl << 1 << std::endl;
-    mutex_.lock();    // WARNING: 这里有时会抛异常，不知道为什么
-    std::cout << std::endl << 2 << std::endl;
+    mutex_.lock();
     cond_.notify_all();
     mutex_.unlock();
     while(!this->works_.empty()) {
